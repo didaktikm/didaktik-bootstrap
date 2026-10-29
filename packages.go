@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// Package names differ between the two families: vim is vim-enhanced on RHEL.
+// Package names differ between apt and dnf: vim is vim-enhanced on AlmaLinux.
 var (
 	aptPackages = []string{"zsh", "git", "ca-certificates", "fzf", "jq", "ripgrep", "tree", "tmux", "vim", "less", "passwd", "util-linux"}
 	dnfPackages = []string{"zsh", "git", "ca-certificates", "fzf", "jq", "ripgrep", "tree", "tmux", "vim-enhanced", "less", "passwd", "util-linux", "util-linux-user"}
 )
 
-// epelPackages are not in the base repositories of RHEL-compatible distributions.
+// epelPackages are not in the base AlmaLinux repositories.
 var epelPackages = map[string]bool{"fzf": true, "ripgrep": true}
 
 func packagesFor(s system) []string {

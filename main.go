@@ -1,6 +1,5 @@
 // Command provisioning sets up zsh, Oh My Zsh and Powerlevel10k for a user and
-// for root on Debian/Ubuntu and RHEL-family (AlmaLinux, Rocky Linux, RHEL,
-// Fedora) systems. Run it as root: sudo ./provisioning [user].
+// for root on Debian, Ubuntu and AlmaLinux systems. Run it as root: sudo ./provisioning [user].
 package main
 
 import (
@@ -24,7 +23,7 @@ const usage = `usage: provisioning [--version] [user]
 Configures zsh, Oh My Zsh and Powerlevel10k for user (default: didaktik) and root.
 Must run as root.
 
-Supported: Debian 11+, Ubuntu 22.04+, AlmaLinux 9+, Rocky Linux 9+, RHEL 9+, Fedora 39+.
+Supported: Debian 11+, Ubuntu 22.04+, AlmaLinux 9+.
 `
 
 func main() {

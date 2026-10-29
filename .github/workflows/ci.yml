@@ -49,8 +49,6 @@ jobs:
           - debian:12
           - ubuntu:24.04
           - almalinux:9
-          - rockylinux:9
-          - fedora:41
     container:
       image: ${{ matrix.image }}
     steps:

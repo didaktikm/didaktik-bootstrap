@@ -7,10 +7,9 @@
 
 - Debian 11+
 - Ubuntu 22.04+
-- AlmaLinux 9+, Rocky Linux 9+, RHEL 9+
-- Fedora 39+
+- AlmaLinux 9+
 
-CentOS не поддерживается.
+Rocky Linux, RHEL, Fedora и CentOS не поддерживаются.
 
 ## Установка
 
@@ -32,7 +31,7 @@ sudo ./provisioning-linux-amd64 didaktik
 
 ## Что делает
 
-1. Ставит пакеты через `apt` (Debian/Ubuntu) или `dnf` (RHEL-семейство, Fedora). На RHEL-семействе подключает EPEL.
+1. Ставит пакеты через `apt` (Debian/Ubuntu) или `dnf` (AlmaLinux). На AlmaLinux подключает EPEL.
 2. Клонирует Oh My Zsh, Powerlevel10k и плагины, каждый на закреплённом коммите.
 3. Пишет `~/.zshrc` и `~/.config/zsh/provisioning-prompt.zsh`. Личные правки — в `~/.config/zsh/local.zsh`, он не перезаписывается.
 4. Перед заменой файла делает бэкап: оригинал в `*.before-provisioning`, каждая замена в `*.bak.<время>`.
@@ -59,7 +58,7 @@ git push origin v0.1.0
 
 Workflow `Release` собирает бинарники и публикует релиз с файлами и `SHA256SUMS`.
 CI (`.github/workflows/ci.yml`) на каждом push и PR запускает тесты, сборку и прогон бинарника
-в контейнерах Debian 12, Ubuntu 24.04, AlmaLinux 9, Rocky Linux 9 и Fedora 41, включая повторный запуск.
+в контейнерах Debian 12, Ubuntu 24.04 и AlmaLinux 9, включая повторный запуск.
 
 ## Закреплённые версии
 

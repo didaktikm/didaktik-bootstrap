@@ -14,8 +14,8 @@ import (
 type system struct {
 	ID      string
 	Version string
-	apt     bool // true: Debian/Ubuntu (apt); false: RHEL family (dnf)
-	el      bool // true: RHEL-compatible (needs EPEL for fzf and ripgrep)
+	apt     bool // true: Debian/Ubuntu (apt); false: AlmaLinux (dnf)
+	el      bool // true: EL-based (needs EPEL for fzf and ripgrep)
 }
 
 func (s system) String() string {
@@ -57,9 +57,7 @@ func classifySystem(fields map[string]string) (system, error) {
 	case id == "debian" && major >= 11, id == "ubuntu" && major >= 22:
 		s.apt = true
 		return s, nil
-	case id == "fedora" && major >= 39:
-		return s, nil
-	case (id == "almalinux" || id == "rocky" || id == "rhel") && major >= 9:
+	case id == "almalinux" && major >= 9:
 		s.el = true
 		return s, nil
 	}

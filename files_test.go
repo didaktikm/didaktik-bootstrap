@@ -103,10 +103,10 @@ func TestClassifySystem(t *testing.T) {
 		{"ubuntu 24.04", map[string]string{"ID": "ubuntu", "VERSION_ID": "24.04"}, true, false, false},
 		{"ubuntu 20.04 too old", map[string]string{"ID": "ubuntu", "VERSION_ID": "20.04"}, false, false, true},
 		{"almalinux 9", map[string]string{"ID": "almalinux", "VERSION_ID": "9.4"}, false, true, false},
-		{"rocky 10", map[string]string{"ID": "rocky", "VERSION_ID": "10.0"}, false, true, false},
-		{"rhel 9", map[string]string{"ID": "rhel", "VERSION_ID": "9.5"}, false, true, false},
-		{"fedora 41", map[string]string{"ID": "fedora", "VERSION_ID": "41"}, false, false, false},
-		{"fedora 38 too old", map[string]string{"ID": "fedora", "VERSION_ID": "38"}, false, false, true},
+		{"almalinux 8 too old", map[string]string{"ID": "almalinux", "VERSION_ID": "8.10"}, false, false, true},
+		{"rocky 9 unsupported", map[string]string{"ID": "rocky", "VERSION_ID": "9.4"}, false, false, true},
+		{"rhel 9 unsupported", map[string]string{"ID": "rhel", "VERSION_ID": "9.5"}, false, false, true},
+		{"fedora 41 unsupported", map[string]string{"ID": "fedora", "VERSION_ID": "41"}, false, false, true},
 		{"centos stream 9 unsupported", map[string]string{"ID": "centos", "VERSION_ID": "9"}, false, false, true},
 		{"arch unsupported", map[string]string{"ID": "arch"}, false, false, true},
 	}
@@ -124,9 +124,9 @@ func TestClassifySystem(t *testing.T) {
 }
 
 func TestParseOSRelease(t *testing.T) {
-	in := "NAME=\"Rocky Linux\"\nID=\"rocky\"\nVERSION_ID=\"9.4\"\n# comment\n\nID_LIKE=\"rhel centos fedora\"\n"
+	in := "NAME=\"AlmaLinux\"\nID=\"almalinux\"\nVERSION_ID=\"9.4\"\n# comment\n\nID_LIKE=\"rhel centos fedora\"\n"
 	f := parseOSRelease(strings.NewReader(in))
-	if f["ID"] != "rocky" || f["VERSION_ID"] != "9.4" || f["NAME"] != "Rocky Linux" {
+	if f["ID"] != "almalinux" || f["VERSION_ID"] != "9.4" || f["NAME"] != "AlmaLinux" {
 		t.Fatalf("parsed = %v", f)
 	}
 }
