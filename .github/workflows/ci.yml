@@ -14,10 +14,11 @@ jobs:
     name: vet, format, unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
       - run: make vet fmt-check test
 
   build:
@@ -25,12 +26,13 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
       - run: make dist VERSION=ci-${{ github.sha }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: provisioning-binaries
           path: dist/
@@ -52,7 +54,7 @@ jobs:
     container:
       image: ${{ matrix.image }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: provisioning-binaries
           path: dist
@@ -63,7 +65,7 @@ jobs:
             apt-get update
             apt-get install -y --no-install-recommends passwd
           else
-            dnf -y install shadow-utils
+            dnf -y install shadow-utils diffutils findutils grep
           fi
           mkdir -p /run/lock
           useradd -m -s /bin/bash tester
