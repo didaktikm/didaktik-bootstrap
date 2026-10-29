@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: vet, format, unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make vet fmt-check test
+
+  build:
+    name: build binaries
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make dist VERSION=ci-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: provisioning-binaries
+          path: dist/
+          if-no-files-found: error
+
+  # Runs the real binary twice (second run must be a no-op) on each target
+  # distribution. Containers run as root, the same as a fresh server would.
+  integration:
+    name: provision ${{ matrix.image }}
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:12
+          - ubuntu:24.04
+          - almalinux:9
+          - rockylinux:9
+          - fedora:41
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: provisioning-binaries
+          path: dist
+      - name: Prepare account
+        run: |
+          set -eux
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y --no-install-recommends passwd
+          else
+            dnf -y install shadow-utils
+          fi
+          mkdir -p /run/lock
+          useradd -m -s /bin/bash tester
+      - name: First run
+        run: |
+          set -eux
+          chmod +x dist/provisioning-linux-amd64
+          dist/provisioning-linux-amd64 tester
+          test -s /home/tester/.zshrc
+          test -d /home/tester/.oh-my-zsh
+          getent passwd tester | cut -d: -f7 | grep -qx /usr/bin/zsh
+      - name: Second run must change nothing
+        run: |
+          set -eux
+          cp /home/tester/.zshrc /tmp/zshrc.before
+          dist/provisioning-linux-amd64 tester
+          cmp /tmp/zshrc.before /home/tester/.zshrc
+          test -z "$(find /home/tester -maxdepth 2 -name '*.bak.*' -print -quit)"

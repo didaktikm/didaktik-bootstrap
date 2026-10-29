@@ -1,0 +1,44 @@
+# Managed by provisioning; personal changes go in ~/.config/zsh/local.zsh.
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME='powerlevel10k/powerlevel10k'
+typeset -g POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true
+zstyle ':omz:update' mode disabled
+plugins=(git history z zsh-autosuggestions zsh-history-substring-search)
+source "$ZSH/oh-my-zsh.sh"
+typeset -U path
+path=("$HOME/.local/bin" "${KREW_ROOT:-$HOME/.krew}/bin" $path)
+export PATH
+[[ -r "$HOME/yandex-cloud/path.bash.inc" ]] && source "$HOME/yandex-cloud/path.bash.inc"
+alias zshconfig='${EDITOR:-vi} ~/.zshrc'
+export FZF_DEFAULT_OPTS='--height 60% --layout reverse --border'
+if (( $+commands[fzf] )); then
+  if _fzf_init=$(fzf --zsh 2>/dev/null); then
+    eval "$_fzf_init"
+  else
+    for _fzf_file in /usr/share/doc/fzf/examples/key-bindings.zsh /usr/share/doc/fzf/examples/completion.zsh \
+                     /usr/share/fzf/shell/key-bindings.zsh /usr/share/fzf/shell/completion.zsh; do
+      [[ -r $_fzf_file ]] && source "$_fzf_file"
+    done
+    unset _fzf_file
+  fi
+  unset _fzf_init
+fi
+ZSH_COMPLETION_CACHE="$HOME/.cache/zsh/completions"
+for _comp in kubectl helm; do
+  [[ -r $ZSH_COMPLETION_CACHE/$_comp.zsh ]] && source "$ZSH_COMPLETION_CACHE/$_comp.zsh"
+done
+unset _comp
+(( $+commands[kubectl] )) && alias k=kubectl
+(( $+functions[_kubectl] )) && compdef _kubectl k
+(( $+commands[kubectx] )) && alias kk=kubectx
+if [[ -z ${KUBECONFIG:-} && -f "$HOME/.kube/config.d/config.yml" ]]; then
+  export KUBECONFIG="$HOME/.kube/config.d/config.yml"
+fi
+[[ -r "$HOME/yandex-cloud/completion.zsh.inc" ]] && source "$HOME/yandex-cloud/completion.zsh.inc"
+# Do not spawn agents or prompt for private-key passphrases at shell startup.
+[[ -r "$HOME/.p10k.zsh" ]] && source "$HOME/.p10k.zsh"
+source "$HOME/.config/zsh/provisioning-prompt.zsh"
+[[ -r "$HOME/.config/zsh/local.zsh" ]] && source "$HOME/.config/zsh/local.zsh"
+[[ -r "$ZSH/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] \
+  && source "$ZSH/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+true
