@@ -133,12 +133,24 @@ def hostname_fqdn() -> str:
 
 
 def render_banner(hostname: str, width: int = 80) -> str:
-    text = hostname.strip() or "unknown-host"
-    max_chars = max(1, (max(width, 10) + 1) // 6)
-    text = text[:max_chars]
+    """Render a banner whose every line fits *width* columns.
+
+    The block art is deliberately kept small and the hostname is truncated for
+    the art itself.  When truncation is needed, the complete FQDN follows as
+    plain text, split into terminal-width chunks so it cannot wrap.
+    """
+    width = max(1, int(width))
+    full_text = hostname.strip() or "unknown-host"
+    # A 5-column glyph plus one separator is six columns.  Compute from the
+    # actual width rather than relying on a minimum terminal size assumption.
+    max_chars = max(1, (width + 1) // 6)
+    text = full_text[:max_chars]
     rows = []
     for y in range(5):
-        rows.append(" ".join(BLOCK_FONT.get(ch.upper(), ("?    ",) * 5)[y] for ch in text).rstrip())
+        row = " ".join(BLOCK_FONT.get(ch.upper(), ("?    ",) * 5)[y] for ch in text).rstrip()
+        rows.append(row[:width])
+    if text != full_text:
+        rows.extend(full_text[i:i + width] for i in range(0, len(full_text), width))
     return "\n".join(rows)
 
 

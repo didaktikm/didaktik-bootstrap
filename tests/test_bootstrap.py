@@ -43,11 +43,22 @@ class BannerTests(Base):
     def test_render_preserves_hostname_punctuation(self):
         rendered = b.render_banner("node-01.example", width=80)
         self.assertIn("#", rendered)
-        self.assertEqual(len(rendered.splitlines()), 5)
+        self.assertLessEqual(max(map(len, rendered.splitlines())), 80)
+        self.assertIn("node-01.example", rendered)
 
     def test_render_truncates_long_name(self):
-        rendered = b.render_banner("x" * 200, width=20)
-        self.assertLessEqual(max(map(len, rendered.splitlines())), 20)
+        hostname = "x" * 200
+        rendered = b.render_banner(hostname, width=20)
+        lines = rendered.splitlines()
+        self.assertLessEqual(max(map(len, lines)), 20)
+        self.assertIn(hostname, "".join(lines))
+
+    def test_render_never_exceeds_narrow_width(self):
+        for width in (1, 2, 7, 13):
+            with self.subTest(width=width):
+                lines = b.render_banner("node-01.example", width=width).splitlines()
+                self.assertTrue(lines)
+                self.assertLessEqual(max(map(len, lines)), width)
 
     def test_hostname_fallback(self):
         with patch.object(b.socket, "getfqdn", side_effect=OSError), patch.object(
