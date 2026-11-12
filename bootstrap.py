@@ -20,6 +20,7 @@ import tempfile
 import time
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import urllib.request
@@ -84,6 +85,67 @@ DOCKER_FINGERPRINT = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
 
 class BootstrapError(RuntimeError):
     """Ошибка, после которой скрипт останавливается с понятным сообщением."""
+
+
+BLOCK_FONT = {
+    ch: tuple(rows) for ch, rows in {
+        **dict.fromkeys("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-", ("     ",) * 5),
+        "A": (" ### ", "#   #", "#####", "#   #", "#   #"),
+        "B": ("#### ", "#   #", "#### ", "#   #", "#### "),
+        "C": (" ####", "#    ", "#    ", "#    ", " ####"),
+        "D": ("#### ", "#   #", "#   #", "#   #", "#### "),
+        "E": ("#####", "#    ", "#### ", "#    ", "#####"),
+        "F": ("#####", "#    ", "#### ", "#    ", "#    "),
+        "G": (" ####", "#    ", "# ###", "#   #", " ####"),
+        "H": ("#   #", "#   #", "#####", "#   #", "#   #"),
+        "I": ("#####", "  #  ", "  #  ", "  #  ", "#####"),
+        "J": ("  ###", "   # ", "   # ", "#  # ", " ##  "),
+        "L": ("#    ", "#    ", "#    ", "#    ", "#####"),
+        "N": ("#   #", "##  #", "# # #", "#  ##", "#   #"),
+        "O": (" ### ", "#   #", "#   #", "#   #", " ### "),
+        "P": ("#### ", "#   #", "#### ", "#    ", "#    "),
+        "R": ("#### ", "#   #", "#### ", "#  # ", "#   #"),
+        "S": (" ####", "#    ", " ### ", "    #", "#### "),
+        "T": ("#####", "  #  ", "  #  ", "  #  ", "  #  "),
+        "U": ("#   #", "#   #", "#   #", "#   #", " ### "),
+        "V": ("#   #", "#   #", "#   #", " # # ", "  #  "),
+        "W": ("#   #", "#   #", "# # #", "## ##", "#   #"),
+        "Y": ("#   #", " # # ", "  #  ", "  #  ", "  #  "),
+        "Z": ("#####", "   # ", "  #  ", " #   ", "#####"),
+        "-": ("     ", "     ", "#####", "     ", "     "),
+        ".": ("     ", "     ", "     ", "     ", "  #  "),
+    }.items()
+}
+
+
+def hostname_fqdn() -> str:
+    try:
+        value = socket.getfqdn().strip()
+    except OSError:
+        value = ""
+    if not value or value.lower() == "localhost":
+        try:
+            value = subprocess.run(["hostname", "-f"], capture_output=True, text=True,
+                                   timeout=2, check=False).stdout.strip()
+        except OSError:
+            value = ""
+    return value or "unknown-host"
+
+
+def render_banner(hostname: str, width: int = 80) -> str:
+    text = hostname.strip() or "unknown-host"
+    max_chars = max(1, (max(width, 10) + 1) // 6)
+    text = text[:max_chars]
+    rows = []
+    for y in range(5):
+        rows.append(" ".join(BLOCK_FONT.get(ch.upper(), ("?    ",) * 5)[y] for ch in text).rstrip())
+    return "\n".join(rows)
+
+
+def print_banner(hostname: str | None = None, width: int | None = None) -> None:
+    if width is None:
+        width = shutil.get_terminal_size((80, 24)).columns
+    print(render_banner(hostname or hostname_fqdn(), width), flush=True)
 
 
 def log(msg: str) -> None:
@@ -1162,6 +1224,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     ISSUES.clear()
     lock = None
 
+    print_banner()
     system = check_system()
     log(f"система: {system}")
     selected_names = args.users or [default_user()]

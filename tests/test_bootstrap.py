@@ -39,6 +39,23 @@ class Base(unittest.TestCase):
         return b.write_file(path, content, uid=os.getuid(), gid=os.getgid(), **kwargs)
 
 
+class BannerTests(Base):
+    def test_render_preserves_hostname_punctuation(self):
+        rendered = b.render_banner("node-01.example", width=80)
+        self.assertIn("#", rendered)
+        self.assertEqual(len(rendered.splitlines()), 5)
+
+    def test_render_truncates_long_name(self):
+        rendered = b.render_banner("x" * 200, width=20)
+        self.assertLessEqual(max(map(len, rendered.splitlines())), 20)
+
+    def test_hostname_fallback(self):
+        with patch.object(b.socket, "getfqdn", side_effect=OSError), patch.object(
+            b.subprocess, "run", return_value=result("fallback.example\n")
+        ):
+            self.assertEqual(b.hostname_fqdn(), "fallback.example")
+
+
 class CliTests(Base):
     def test_defaults_include_github_cli(self):
         self.assertIn("git", b.BASE_PACKAGES)
