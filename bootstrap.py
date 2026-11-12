@@ -1044,8 +1044,9 @@ def run_text_menu(options: List[Option], state: Dict[str, bool], notice: str) ->
 
 
 def package_picker(stdscr, state: Dict[str, bool]) -> None:
-    """Curses picker for optional packages and validated custom package input."""
+    """Visible, scrollable picker for optional and manually entered packages."""
     pos = 0
+    manual = len(EXTRA_PACKAGES)
     while True:
         stdscr.erase()
         height, width = stdscr.getmaxyx()
@@ -1054,25 +1055,40 @@ def package_picker(stdscr, state: Dict[str, bool]) -> None:
                 try: stdscr.addnstr(y, 0, text, max(width - 1, 1), attr)
                 except curses.error: pass
         put(0, "Выбор дополнительных пакетов", curses.A_BOLD)
-        put(1, "↑/↓ выбор, пробел отметить, c — свои пакеты, Enter — готово")
-        for i, name in enumerate(EXTRA_PACKAGES):
+        put(1, "↑/↓ или j/k — выбор   пробел — отметить   c — ввод   Enter — сохранить   Esc/q — назад")
+        put(2, "Отмеченные пакеты сохраняются при возврате в главное меню.", curses.A_DIM)
+        visible = max(1, height - 7)
+        start = max(0, min(pos, manual) - visible + 1)
+        end = min(len(EXTRA_PACKAGES), start + visible)
+        for row, i in enumerate(range(start, end), 4):
+            name = EXTRA_PACKAGES[i]
             mark = "[*]" if state.get("package_" + name, False) else "[ ]"
-            put(3 + i, f"{mark} {name}", curses.A_REVERSE if i == pos else 0)
-        put(4 + len(EXTRA_PACKAGES), "Свои: " + ", ".join(state.get("custom_packages", [])), curses.A_DIM)
+            put(row, f"{mark} {name}", curses.A_REVERSE if i == pos else 0)
+        manual_y = min(4 + (manual - start), height - 3)
+        put(manual_y, "[ ] Свои пакеты: " + ", ".join(state.get("custom_packages", [])),
+            curses.A_REVERSE if pos == manual else curses.A_DIM)
+        put(height - 2, "Пакеты через запятую (например: htop, tree); некорректные имена игнорируются.")
         ch = stdscr.getch()
-        if ch in (curses.KEY_UP, ord("k")): pos = (pos - 1) % len(EXTRA_PACKAGES)
-        elif ch in (curses.KEY_DOWN, ord("j")): pos = (pos + 1) % len(EXTRA_PACKAGES)
-        elif ch == ord(" "):
-            state["package_" + EXTRA_PACKAGES[pos]] = not state.get("package_" + EXTRA_PACKAGES[pos], False)
-        elif ch == ord("c"):
+        if ch in (curses.KEY_UP, ord("k")): pos = (pos - 1) % (manual + 1)
+        elif ch in (curses.KEY_DOWN, ord("j")): pos = (pos + 1) % (manual + 1)
+        elif ch == ord(" ") and pos < manual:
+            key = "package_" + EXTRA_PACKAGES[pos]
+            state[key] = not state.get(key, False)
+        elif ch in (ord("c"), 10, 13, curses.KEY_ENTER) and pos == manual and ch == ord("c"):
             curses.echo(); curses.curs_set(1)
-            put(5 + len(EXTRA_PACKAGES), "Пакеты через запятую: ")
+            put(height - 1, "Пакеты: ")
             stdscr.refresh()
-            raw = stdscr.getstr(5 + len(EXTRA_PACKAGES), 22, max(width - 23, 1)).decode(errors="replace")
-            curses.noecho(); curses.curs_set(0)
-            try: state["custom_packages"] = normalize_packages([raw])
-            except BootstrapError: pass
-        elif ch in (10, 13, curses.KEY_ENTER, 27): return
+            try:
+                raw = stdscr.getstr(height - 1, 9, max(width - 10, 1)).decode(errors="replace")
+                state["custom_packages"] = normalize_packages([raw])
+            except (BootstrapError, curses.error):
+                pass
+            finally:
+                curses.noecho(); curses.curs_set(0)
+        elif ch in (10, 13, curses.KEY_ENTER):
+            return
+        elif ch in (ord("q"), 27):
+            return
 
 
 def run_menu(options: List[Option], state: Dict[str, bool], notice: str = "") -> bool:
