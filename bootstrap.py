@@ -364,6 +364,10 @@ def set_timezone(name: str) -> None:
 
 
 def setup_sudo(username: str) -> None:
+    # root already has unrestricted privileges and must never receive a sudoers entry.
+    if username == "root":
+        log("  root: sudoers не настраивается")
+        return
     if "sudo" not in user_groups(username):
         run(["usermod", "-aG", "sudo", username])
         log(f"  {username} добавлен в группу sudo")
@@ -996,9 +1000,37 @@ def default_user() -> str:
     raise BootstrapError("при прямом запуске root укажите пользователя явно")
 
 
+def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> None:
+    """Ensure selected accounts exist; new accounts have locked passwords."""
+    missing = []
+    for name in names:
+        if name == "root":
+            continue
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]*[$]?", name):
+            raise BootstrapError(f"имя пользователя небезопасно: {name}")
+        try:
+            pwd.getpwnam(name)
+        except KeyError:
+            missing.append(name)
+    if not missing:
+        return
+    if not create:
+        if interactive:
+            answer = input("Отсутствуют пользователи " + ", ".join(missing) + ". Создать их? [y/N] ").strip().lower()
+            if answer not in ("y", "yes", "д", "да"):
+                raise BootstrapError("пользователи не созданы: " + ", ".join(missing))
+        else:
+            raise BootstrapError("нет пользователей: " + ", ".join(missing) + "; повторите с --create-users")
+    for name in missing:
+        run(["useradd", "--create-home", "--shell", "/bin/bash", name])
+        run(["passwd", "--lock", name])
+        log(f"  создан пользователь {name} (пароль заблокирован)")
+
+
 def escalate(args: argparse.Namespace, state: Dict[str, bool], usernames: Sequence[str]) -> None:
     """Перезапускает скрипт от root с уже выбранными шагами. Обратно не возвращается."""
     cmd = [sys.executable, str(Path(__file__).resolve()), "--no-tui",
+           *( ["--create-users"] if args.create_users else [] ),
            "--timezone", args.timezone, "--docker-root", args.docker_root]
     for key, enabled in state.items():
         cmd += ["--enable" if enabled else "--disable", key]
@@ -1035,6 +1067,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     p.add_argument("--enable", action="append", default=[], choices=keys, metavar="ШАГ", help="включить шаг (можно несколько раз)")
     p.add_argument("--disable", action="append", default=[], choices=keys, metavar="ШАГ", help="выключить шаг (можно несколько раз)")
     p.add_argument("--dry-run", action="store_true", help="показать команды, ничего не меняя")
+    p.add_argument("--create-users", action="store_true", help="создать отсутствующих пользователей (пароль заблокирован)")
     p.add_argument("--replace-container-runtime", action="store_true",
                    help="разрешить удаление конфликтующих container runtime пакетов")
     args = p.parse_args(argv)
@@ -1058,6 +1091,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if not selected_names:
         raise BootstrapError("укажите хотя бы одного пользователя")
     selected_names = list(dict.fromkeys(selected_names))
+    interactive = not args.no_tui and sys.stdin.isatty() and sys.stdout.isatty()
+    if os.geteuid() == 0 and not DRY_RUN:
+        ensure_users(selected_names, create=args.create_users, interactive=interactive)
     users = [Account.lookup(name) for name in selected_names]
     root = Account.lookup("root")
     options = build_options([account.name for account in users], args.timezone, args.docker_root)
