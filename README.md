@@ -7,8 +7,9 @@
 Разрешены Debian 11/12/13 и Ubuntu LTS 22.04/24.04 с работающим systemd. Для шага Docker — **только Debian 12/13 и Ubuntu 22.04/24.04**; наличие репозитория для архитектуры проверяется до изменений. Debian 11 запускайте с `--disable docker`. Новые релизы, производные дистрибутивы, rootless Docker, Docker Desktop, macOS и системы без systemd не поддерживаются. Эти ограничения не означают, что все комбинации прошли VM-интеграционное тестирование.
 
 ```sh
-python3 bootstrap.py alice                   # меню
-python3 bootstrap.py --no-tui alice          # значения по умолчанию
+python3 bootstrap.py alice                   # меню для одного пользователя
+python3 bootstrap.py Rut Tidactic             # меню для нескольких пользователей
+python3 bootstrap.py --no-tui Rut Tidactic    # значения по умолчанию для обоих
 python3 bootstrap.py --dry-run --no-tui alice # план без изменений
 python3 bootstrap.py --no-tui --disable docker alice
 ```

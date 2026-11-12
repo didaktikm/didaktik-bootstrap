@@ -883,7 +883,12 @@ class Option:
     hint: str
 
 
-def build_options(username: str, timezone: str, docker_root: str) -> List[Option]:
+def build_options(username: str | Sequence[str], timezone: str, docker_root: str) -> List[Option]:
+    if isinstance(username, str):
+        usernames = [username] if username else []
+    else:
+        usernames = list(username)
+    user_label = ", ".join(usernames)
     return [
         Option("official_mirror", "Официальное зеркало APT", True,
                "Debian: deb.debian.org; Ubuntu: archive.ubuntu.com. Сторонние и security-источники не меняются."),
@@ -893,14 +898,14 @@ def build_options(username: str, timezone: str, docker_root: str) -> List[Option
                True, "Полный список: " + " ".join(EXTRA_PACKAGES)),
         Option("timezone", f"Часовой пояс {timezone} и NTP", True,
                "Другой пояс: флаг --timezone Region/City."),
-        Option("sudo_nopasswd", f"sudo без пароля для {username}", False,
+        Option("sudo_nopasswd", f"sudo без пароля для {user_label}", False,
                "Файл /etc/sudoers.d/<user>; старый сохраняется в .bak, проверяется visudo."),
         Option("editor", "vim — редактор по умолчанию", True, "update-alternatives --set editor"),
         Option("zsh", "zsh + Oh My Zsh + Powerlevel10k (пользователь и root)", True,
                "Ваши шаблоны из templates/. ~/.p10k.zsh не трогается."),
         Option("docker", "Docker CE из официального репозитория", True,
                "Замена конфликтующих runtime требует --replace-container-runtime."),
-        Option("docker_group", f"{username} в группе docker", False,
+        Option("docker_group", f"{user_label} в группе docker", False,
                "Внимание: доступ к docker равен root-доступу на хосте."),
         Option("docker_move", f"Перенести данные Docker в {docker_root}", False,
                "Останавливает Docker; работает только без запущенных контейнеров. "
@@ -991,7 +996,7 @@ def default_user() -> str:
     raise BootstrapError("при прямом запуске root укажите пользователя явно")
 
 
-def escalate(args: argparse.Namespace, state: Dict[str, bool], username: str) -> None:
+def escalate(args: argparse.Namespace, state: Dict[str, bool], usernames: Sequence[str]) -> None:
     """Перезапускает скрипт от root с уже выбранными шагами. Обратно не возвращается."""
     cmd = [sys.executable, str(Path(__file__).resolve()), "--no-tui",
            "--timezone", args.timezone, "--docker-root", args.docker_root]
@@ -999,7 +1004,7 @@ def escalate(args: argparse.Namespace, state: Dict[str, bool], username: str) ->
         cmd += ["--enable" if enabled else "--disable", key]
     if args.replace_container_runtime:
         cmd.append("--replace-container-runtime")
-    cmd.append(username)
+    cmd.extend([usernames] if isinstance(usernames, str) else usernames)
 
     if DRY_RUN:
         return
@@ -1022,8 +1027,8 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         description="Первичная настройка Debian/Ubuntu.",
         epilog="Ключи шагов: " + ", ".join(keys),
     )
-    p.add_argument("user", nargs="?", default=None,
-                   help="пользователь (от прямого root нужно указать явно)")
+    p.add_argument("users", nargs="*",
+                   help="пользователи (от прямого root нужно указать явно)")
     p.add_argument("--timezone", default=DEFAULT_TIMEZONE, help=f"часовой пояс (по умолчанию: {DEFAULT_TIMEZONE})")
     p.add_argument("--docker-root", default=DEFAULT_DOCKER_ROOT, help=f"каталог данных Docker при переносе (по умолчанию: {DEFAULT_DOCKER_ROOT})")
     p.add_argument("--no-tui", action="store_true", help="без меню: применить значения по умолчанию и флаги")
@@ -1049,10 +1054,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     system = check_system()
     log(f"система: {system}")
-    user = Account.lookup(args.user or default_user())
+    selected_names = args.users or [default_user()]
+    if not selected_names:
+        raise BootstrapError("укажите хотя бы одного пользователя")
+    selected_names = list(dict.fromkeys(selected_names))
+    users = [Account.lookup(name) for name in selected_names]
     root = Account.lookup("root")
-
-    options = build_options(user.name, args.timezone, args.docker_root)
+    options = build_options([account.name for account in users], args.timezone, args.docker_root)
     state = {o.key: o.default for o in options}
     for key in args.enable:
         state[key] = True
@@ -1069,11 +1077,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     resolve_dependencies(state)
     if state["timezone"]:
         check_zone(args.timezone)
-    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]*[$]?", user.name):
-        raise BootstrapError("имя пользователя небезопасно для sudoers")
-    safe_path(user.home)
-    if not user.home.is_dir():
-        raise BootstrapError(f"нет домашнего каталога: {user.home}")
+    for user in users:
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]*[$]?", user.name):
+            raise BootstrapError("имя пользователя небезопасно для sudoers")
+        safe_path(user.home)
+        if not user.home.is_dir():
+            raise BootstrapError(f"нет домашнего каталога: {user.home}")
     if state["zsh"]:
         for name in ("zshrc", "provisioning-prompt.zsh", "local.zsh"):
             template(name)
@@ -1088,7 +1097,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if Path(args.docker_root) == Path("/"):
             raise BootstrapError("Docker target не может быть /")
     if needs_escalation:
-        escalate(args, state, user.name)
+        escalate(args, state, [account.name for account in users])
     if DRY_RUN:
         log("режим --dry-run: изменения не вносятся")
     log("шаги: " + ", ".join(k for k, v in state.items() if v))
@@ -1117,7 +1126,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             completed.append("timezone")
         if state["sudo_nopasswd"]:
             step("sudo без пароля")
-            setup_sudo(user.name)
+            for user in users:
+                setup_sudo(user.name)
             completed.append("sudo_nopasswd")
         if state["editor"]:
             step("Редактор по умолчанию")
@@ -1125,13 +1135,19 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             completed.append("editor")
         if state["zsh"]:
             step("zsh")
-            for acc in ([user] if user.name == "root" else [user, root]):
+            zsh_accounts = list(users)
+            if all(acc.name != "root" for acc in zsh_accounts):
+                zsh_accounts.append(root)
+            for acc in zsh_accounts:
                 setup_zsh(acc)
                 set_login_shell(acc)
             completed.append("zsh")
         if state["docker"]:
             step("Docker")
-            setup_docker(state, user.name, system, args.docker_root, args.replace_container_runtime)
+            for user in users:
+                if state["docker_group"]:
+                    add_docker_group(user.name)
+            setup_docker({**state, "docker_group": False}, users[0].name, system, args.docker_root, args.replace_container_runtime)
             completed.append("docker")
         if state["firewall_off"]:
             step("Фаервол")
