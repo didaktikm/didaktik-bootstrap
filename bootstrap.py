@@ -927,13 +927,13 @@ def build_options(username: str | Sequence[str], timezone: str, docker_root: str
                "Debian: deb.debian.org; Ubuntu: archive.ubuntu.com. Сторонние и security-источники не меняются."),
         Option("upgrade", "Обновить систему (apt full-upgrade)", True,
                "Долгий шаг: обновляет все установленные пакеты."),
-        Option("packages_extra", "Дополнительные утилиты (группа)", True,
-               "Пробел переключает группу; отдельные пакеты можно отметить ниже."),
-        *[Option("package_" + name, name, True, "Дополнительный пакет") for name in EXTRA_PACKAGES],
+        Option("packages_extra", "Дополнительные пакеты (выбор)", True,
+               "Enter открывает список; пробел выбирает пакеты."),
         Option("timezone", f"Часовой пояс {timezone} и NTP", True,
                "Другой пояс: флаг --timezone Region/City."),
-        Option("sudo_nopasswd", f"sudo без пароля для {user_label}", False,
-               "Файл /etc/sudoers.d/<user>; старый сохраняется в .bak, проверяется visudo."),
+        *([] if usernames and all(name == "root" for name in usernames) else [
+            Option("sudo_nopasswd", f"sudo без пароля для {user_label}", False,
+                   "Файл /etc/sudoers.d/<user>; старый сохраняется в .bak, проверяется visudo.")]),
         Option("editor", "vim — редактор по умолчанию", True, "update-alternatives --set editor"),
         Option("zsh", "zsh + Oh My Zsh + Powerlevel10k (пользователь и root)", True,
                "Ваши шаблоны из templates/. ~/.p10k.zsh не трогается."),
@@ -981,6 +981,38 @@ def run_text_menu(options: List[Option], state: Dict[str, bool], notice: str) ->
                 state[key] = not state[key]
 
 
+def package_picker(stdscr, state: Dict[str, bool]) -> None:
+    """Curses picker for optional packages and validated custom package input."""
+    pos = 0
+    while True:
+        stdscr.erase()
+        height, width = stdscr.getmaxyx()
+        def put(y, text, attr=0):
+            if 0 <= y < height:
+                try: stdscr.addnstr(y, 0, text, max(width - 1, 1), attr)
+                except curses.error: pass
+        put(0, "Выбор дополнительных пакетов", curses.A_BOLD)
+        put(1, "↑/↓ выбор, пробел отметить, c — свои пакеты, Enter — готово")
+        for i, name in enumerate(EXTRA_PACKAGES):
+            mark = "[*]" if state.get("package_" + name, False) else "[ ]"
+            put(3 + i, f"{mark} {name}", curses.A_REVERSE if i == pos else 0)
+        put(4 + len(EXTRA_PACKAGES), "Свои: " + ", ".join(state.get("custom_packages", [])), curses.A_DIM)
+        ch = stdscr.getch()
+        if ch in (curses.KEY_UP, ord("k")): pos = (pos - 1) % len(EXTRA_PACKAGES)
+        elif ch in (curses.KEY_DOWN, ord("j")): pos = (pos + 1) % len(EXTRA_PACKAGES)
+        elif ch == ord(" "):
+            state["package_" + EXTRA_PACKAGES[pos]] = not state.get("package_" + EXTRA_PACKAGES[pos], False)
+        elif ch == ord("c"):
+            curses.echo(); curses.curs_set(1)
+            put(5 + len(EXTRA_PACKAGES), "Пакеты через запятую: ")
+            stdscr.refresh()
+            raw = stdscr.getstr(5 + len(EXTRA_PACKAGES), 22, max(width - 23, 1)).decode(errors="replace")
+            curses.noecho(); curses.curs_set(0)
+            try: state["custom_packages"] = normalize_packages([raw])
+            except BootstrapError: pass
+        elif ch in (10, 13, curses.KEY_ENTER, 27): return
+
+
 def run_menu(options: List[Option], state: Dict[str, bool], notice: str = "") -> bool:
     """Меню с галочками. True — запускать, False — отмена."""
     locale.setlocale(locale.LC_ALL, "")
@@ -1015,6 +1047,8 @@ def run_menu(options: List[Option], state: Dict[str, bool], notice: str = "") ->
                 pos = (pos + 1) % len(options)
             elif ch == ord(" "):
                 state[options[pos].key] = not state[options[pos].key]
+            elif ch in (10, 13, curses.KEY_ENTER) and options[pos].key == "packages_extra":
+                package_picker(stdscr, state)
             elif ch in (10, 13, curses.KEY_ENTER):
                 return True
             elif ch in (ord("q"), 27):
@@ -1093,7 +1127,7 @@ def escalate(args: argparse.Namespace, state: Dict[str, bool], usernames: Sequen
 
 
 def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
-    keys = [o.key for o in build_options("", "", "") if not o.key.startswith("package_")]
+    keys = [o.key for o in build_options("user", "", "") if not o.key.startswith("package_")]
     p = argparse.ArgumentParser(
         description="Первичная настройка Debian/Ubuntu.",
         epilog="Ключи шагов: " + ", ".join(keys),
@@ -1146,6 +1180,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         state[key] = True
     for key in args.disable:
         state[key] = False
+    if "sudo_nopasswd" not in state:
+        state["sudo_nopasswd"] = False
     interactive = not args.no_tui and sys.stdin.isatty() and sys.stdout.isatty()
     if interactive:
         notice = ("Запущено без root: после Enter sudo запросит пароль пользователя, либо su — root."
@@ -1187,7 +1223,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         lock = acquire_lock()
         step("Пакеты")
         packages = list(BASE_PACKAGES)
-        if state["packages_extra"]:
+        if state.get("packages_extra", False):
             packages += [name for name in EXTRA_PACKAGES if state.get("package_" + name, False)]
         packages += state.get("custom_packages", [])
         packages = normalize_packages(packages)
@@ -1206,7 +1242,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             step("Часовой пояс")
             set_timezone(args.timezone)
             completed.append("timezone")
-        if state["sudo_nopasswd"]:
+        if state.get("sudo_nopasswd", False):
             step("sudo без пароля")
             for user in users:
                 setup_sudo(user.name)
