@@ -57,6 +57,7 @@ SHELLS_FILE = Path("/etc/shells")
 DAEMON_JSON = Path("/etc/docker/daemon.json")
 DOCKER_KEY = Path("/etc/apt/keyrings/docker.asc")
 DOCKER_SOURCES = Path("/etc/apt/sources.list.d/docker.sources")
+APT_MIRROR_SOURCES = Path("/etc/apt/sources.list.d/00-didaktik-official-mirror.sources")
 
 # Закреплённые коммиты. Обновление: поменять rev, посмотреть diff upstream.
 OMZ_URL = "https://github.com/ohmyzsh/ohmyzsh.git"
@@ -307,6 +308,34 @@ def package_installed(pkg: str) -> bool:
     if proc.returncode not in (0, 1):
         raise BootstrapError(f"dpkg-query {pkg}: {proc.stderr}")
     return proc.returncode == 0 and proc.stdout.strip() == "install ok installed"
+
+
+def configure_official_mirror(system: SystemInfo) -> None:
+    """Normalize official archive URIs, leaving security and third-party entries intact."""
+    mirror = "http://deb.debian.org/debian" if system.id == "debian" else "http://archive.ubuntu.com/ubuntu"
+    official_hosts = ("deb.debian.org", "ftp.debian.org") if system.id == "debian" else ("archive.ubuntu.com",)
+    files = [Path("/etc/apt/sources.list")]
+    sources_dir = Path("/etc/apt/sources.list.d")
+    if sources_dir.is_dir():
+        files.extend(sorted(sources_dir.glob("*.list")))
+    for path in files:
+        safe_path(path)
+        if not path.is_file():
+            continue
+        original = path.read_text()
+        changed = []
+        for line in original.splitlines(keepends=True):
+            if line.lstrip().startswith("#") or not re.match(r"\\s*deb(?:-src)?\\s", line):
+                changed.append(line)
+                continue
+            replaced = line
+            for host in official_hosts:
+                replaced = re.sub(r"https?://" + re.escape(host) + r"(?=/|\\s)", mirror, replaced)
+            changed.append(replaced)
+        content = "".join(changed).encode()
+        if content != original.encode():
+            write_file(path, content, mode=stat.S_IMODE(path.stat().st_mode),
+                       uid=path.stat().st_uid, gid=path.stat().st_gid)
 
 
 def apt_update() -> None:
@@ -856,6 +885,8 @@ class Option:
 
 def build_options(username: str, timezone: str, docker_root: str) -> List[Option]:
     return [
+        Option("official_mirror", "Официальное зеркало APT", True,
+               "Debian: deb.debian.org; Ubuntu: archive.ubuntu.com. Сторонние и security-источники не меняются."),
         Option("upgrade", "Обновить систему (apt full-upgrade)", True,
                "Долгий шаг: обновляет все установленные пакеты."),
         Option("packages_extra", "Дополнительные утилиты: " + " ".join(EXTRA_PACKAGES[:6]) + " ...",
@@ -1071,6 +1102,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             packages += EXTRA_PACKAGES
         if state["docker_move"] and "rsync" not in packages:
             packages.append("rsync")
+        if state["official_mirror"]:
+            step("Официальное зеркало APT")
+            configure_official_mirror(system)
         apt_update()
         if state["upgrade"]:
             run(["apt-get", "-y", *APT_CONF, "full-upgrade"], env_extra=APT_ENV, stream=True)
