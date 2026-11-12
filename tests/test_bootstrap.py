@@ -40,6 +40,10 @@ class Base(unittest.TestCase):
 
 
 class CliTests(Base):
+    def test_defaults_include_github_cli(self):
+        self.assertIn("git", b.BASE_PACKAGES)
+        self.assertIn("gh", b.BASE_PACKAGES)
+
     def test_defaults_and_dependencies(self):
         state = {o.key: o.default for o in b.build_options("alice", "UTC", "/opt/docker")}
         for key in ("sudo_nopasswd", "docker_group", "docker_move", "firewall_off"):

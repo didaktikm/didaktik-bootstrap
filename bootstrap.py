@@ -36,7 +36,7 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_TIMEZONE = "Europe/Moscow"
 DEFAULT_DOCKER_ROOT = "/opt/docker"
 
-BASE_PACKAGES = ["sudo", "vim", "mc", "ncdu", "htop", "zsh", "git", "curl", "ca-certificates"]
+BASE_PACKAGES = ["sudo", "vim", "mc", "ncdu", "htop", "zsh", "git", "gh", "curl", "ca-certificates"]
 EXTRA_PACKAGES = [
     "btop", "net-tools", "bash-completion", "wget", "tmux", "rsync", "unzip", "tree",
     "jq", "lsof", "dnsutils", "iotop", "gnupg", "fzf", "ripgrep",

@@ -19,7 +19,7 @@ python3 bootstrap.py --no-tui --disable docker alice
 
 ## Что включено по умолчанию
 
-- Базовые пакеты всегда: sudo, vim, mc, ncdu, htop, zsh, git, curl, ca-certificates.
+- Базовые пакеты всегда: sudo, vim, mc, ncdu, htop, zsh, git, gh (GitHub CLI), curl, ca-certificates.
 - `official_mirror`: перед первым `apt update` заменяет только официальные Debian/Ubuntu archive URIs на `deb.debian.org` или `archive.ubuntu.com`; включён по умолчанию. Все изменения атомарны, с `*.bak.*` backup, повторный запуск идемпотентен. Security и сторонние источники сохраняются. Отключить: `--disable official_mirror`.
 - `upgrade`: APT full-upgrade; `packages_extra`: дополнительные утилиты.
 - `timezone`: Europe/Moscow и NTP (`--timezone Region/City`).
