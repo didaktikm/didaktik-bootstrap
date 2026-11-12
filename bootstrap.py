@@ -1178,12 +1178,20 @@ def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> No
     if not missing:
         return
     if not create:
-        if interactive:
-            answer = input("Отсутствуют пользователи " + ", ".join(missing) + ". Создать их? [y/N] ").strip().lower()
-            if answer not in ("y", "yes", "д", "да"):
-                raise BootstrapError("пользователи не созданы: " + ", ".join(missing))
-        else:
+        if not interactive:
             raise BootstrapError("нет пользователей: " + ", ".join(missing) + "; повторите с --create-users")
+        answer = input("Создать пользователей через запятую: " + ", ".join(missing) + ": ")
+        requested = list(dict.fromkeys(part.strip() for part in answer.split(",") if part.strip()))
+        if not requested:
+            raise BootstrapError("пользователи не созданы: " + ", ".join(missing))
+        invalid = [name for name in requested
+                   if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]*[$]?", name)]
+        unknown = [name for name in requested if name not in missing]
+        if invalid:
+            raise BootstrapError("имя пользователя небезопасно: " + ", ".join(invalid))
+        if unknown:
+            raise BootstrapError("нельзя создать непредложенных пользователей: " + ", ".join(unknown))
+        missing = [name for name in missing if name in requested]
     for name in missing:
         run(["useradd", "--create-home", "--shell", "/bin/bash", name])
         run(["passwd", "--lock", name])

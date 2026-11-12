@@ -39,6 +39,27 @@ class Base(unittest.TestCase):
         return b.write_file(path, content, uid=os.getuid(), gid=os.getgid(), **kwargs)
 
 
+class EnsureUsersTests(Base):
+    def test_interactive_comma_space_creates_only_confirmed_users(self):
+        existing = {"Rut"}
+        def lookup(name):
+            if name not in existing:
+                raise KeyError(name)
+            return object()
+        commands = []
+        with patch.object(b.pwd, "getpwnam", side_effect=lookup), patch.object(
+            b, "run", side_effect=lambda cmd: (commands.append(cmd), existing.add(cmd[-1]))[0]
+        ), patch("builtins.input", return_value=" Didactic, "):
+            b.ensure_users(["Rut", "Didactic", "Other"], create=False, interactive=True)
+        self.assertEqual(commands, [["useradd", "--create-home", "--shell", "/bin/bash", "Didactic"],
+                                    ["passwd", "--lock", "Didactic"]])
+
+    def test_noninteractive_without_flag_is_clear_error(self):
+        with patch.object(b.pwd, "getpwnam", side_effect=KeyError):
+            with self.assertRaisesRegex(b.BootstrapError, "--create-users"):
+                b.ensure_users(["missing"], create=False, interactive=False)
+
+
 class BannerTests(Base):
     def test_render_preserves_hostname_punctuation(self):
         rendered = b.render_banner("node-01.example", width=80)
