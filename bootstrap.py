@@ -476,11 +476,16 @@ def check_zsh_syntax(path: Path) -> None:
 
 
 def smoke_test(acc: Account) -> None:
-    """Открывает интерактивный zsh один раз: ошибка в конфиге видна сразу."""
+    """Явно применяет ~/.zshrc в дочернем zsh и проверяет конфигурацию."""
     if DRY_RUN:
         return
+    # run() supplies HOME/ZDOTDIR context and, for root, drops privileges to
+    # this account.  The child shell cannot modify the caller's environment;
+    # reconnect (or exec zsh) is still required to use the new login shell.
+    zshrc = acc.home / ".zshrc"
+    command = f"source -- {shlex.quote(str(zshrc))}"
     try:
-        run(["zsh", "-i", "-c", "exit"], acc=acc, timeout=60)
+        run(["zsh", "-i", "-c", command], acc=acc, timeout=60)
     except (BootstrapError, subprocess.TimeoutExpired) as exc:
         raise BootstrapError(f"smoke-test zsh {acc.name}: {exc}") from exc
 
@@ -513,7 +518,6 @@ def setup_zsh(acc: Account) -> None:
     safe_path(cfg / "local.zsh")
     if not (cfg / "local.zsh").exists():
         put(cfg / "local.zsh", "local.zsh", backup=False)
-    smoke_test(acc)
 
 
 def set_login_shell(acc: Account) -> None:
@@ -1177,6 +1181,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             for acc in zsh_accounts:
                 setup_zsh(acc)
                 set_login_shell(acc)
+                smoke_test(acc)
             completed.append("zsh")
         if state["docker"]:
             step("Docker")

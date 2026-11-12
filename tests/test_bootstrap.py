@@ -343,6 +343,18 @@ class ZshTests(Base):
             b.setup_zsh(b.Account("root", 0, 0, Path("/root")))
         repo.assert_not_called()
 
+    def test_smoke_sources_user_zshrc_with_shell_quoting(self):
+        acc = b.Account("alice", 1000, 1000, self.root / "a user's home")
+        with patch.object(b, "run") as command:
+            b.smoke_test(acc)
+        args = command.call_args.args[0]
+        self.assertEqual(args[:2], ["zsh", "-i"])
+        self.assertIn("source --", args[3])
+        self.assertIn("s home/.zshrc", args[3])
+        self.assertIn("'\"'\"'", args[3])
+        self.assertEqual(command.call_args.kwargs["acc"], acc)
+        self.assertEqual(command.call_args.kwargs["timeout"], 60)
+
     def test_smoke_failure_propagates(self):
         with patch.object(b, "run", side_effect=b.BootstrapError("bad zsh")), self.assertRaises(b.BootstrapError):
             b.smoke_test(b.Account("alice", 1000, 1000, self.root))
