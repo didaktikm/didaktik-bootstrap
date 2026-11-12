@@ -1,65 +1,99 @@
 # didaktik-bootstrap
 
-Первичная настройка Linux-сервера: zsh, Oh My Zsh и Powerlevel10k для пользователя и root.
-Один статический бинарник без зависимостей, собирается из Go.
+Один Python-скрипт для первичной настройки Debian/Ubuntu. Python 3.9+, только стандартная библиотека; шаблоны Zsh должны оставаться рядом в `templates/`.
 
-## Поддерживаемые системы
+## Поддержка и запуск
 
-- Debian 11+
-- Ubuntu 22.04+
-- AlmaLinux 9+
+Разрешены Debian 11/12/13 и Ubuntu LTS 22.04/24.04 с работающим systemd. Для шага Docker — **только Debian 12/13 и Ubuntu 22.04/24.04**; наличие репозитория для архитектуры проверяется до изменений. Debian 11 запускайте с `--disable docker`. Новые релизы, производные дистрибутивы, rootless Docker, Docker Desktop, macOS и системы без systemd не поддерживаются. Эти ограничения не означают, что все комбинации прошли VM-интеграционное тестирование.
 
-Rocky Linux, RHEL, Fedora и CentOS не поддерживаются.
-
-## Установка
-
-Скачайте бинарник из [последнего релиза](https://github.com/didaktikm/didaktik-bootstrap/releases/latest),
-проверьте контрольную сумму и запустите от root:
-
-```bash
-curl -fsSLO https://github.com/didaktikm/didaktik-bootstrap/releases/latest/download/provisioning-linux-amd64
-curl -fsSLO https://github.com/didaktikm/didaktik-bootstrap/releases/latest/download/SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing
-chmod +x provisioning-linux-amd64
-sudo ./provisioning-linux-amd64 didaktik
+```sh
+python3 bootstrap.py alice                   # меню
+python3 bootstrap.py --no-tui alice          # значения по умолчанию
+python3 bootstrap.py --dry-run --no-tui alice # план без изменений
+python3 bootstrap.py --no-tui --disable docker alice
 ```
 
-Аргумент — существующий пользователь (по умолчанию `didaktik`). Настройка выполняется и для него, и для root.
-Повторный запуск ничего не меняет, если конфиги уже актуальны.
+Обычный пользователь определяется по UID. При прямом запуске root имя необходимо передать явно (либо оно берётся из `SUDO_USER`). Скрипт предпочитает **sudo с запросом пароля пользователя**, если sudo существует; на минимальном Debian без sudo использует `su -` и пароль root. Отказ sudo не обходится автоматическим переходом к su: при необходимости запускайте от root явно.
 
-Для arm64 используйте `provisioning-linux-arm64`.
+`--enable ШАГ` / `--disable ШАГ` можно повторять. Одновременно включить и отключить один шаг нельзя. `docker_group` и `docker_move` требуют включённого `docker`: отключение Docker не отменяется молча.
 
-## Что делает
+## Что включено по умолчанию
 
-1. Ставит пакеты через `apt` (Debian/Ubuntu) или `dnf` (AlmaLinux). На AlmaLinux подключает EPEL.
-2. Клонирует Oh My Zsh, Powerlevel10k и плагины, каждый на закреплённом коммите.
-3. Пишет `~/.zshrc` и `~/.config/zsh/provisioning-prompt.zsh`. Личные правки — в `~/.config/zsh/local.zsh`, он не перезаписывается.
-4. Перед заменой файла делает бэкап: оригинал в `*.before-provisioning`, каждая замена в `*.bak.<время>`.
-5. Кэширует completion для kubectl и helm.
-6. Делает zsh оболочкой входа.
+- Базовые пакеты всегда: sudo, vim, mc, ncdu, htop, zsh, git, curl, ca-certificates.
+- `upgrade`: APT full-upgrade; `packages_extra`: дополнительные утилиты.
+- `timezone`: Europe/Moscow и NTP (`--timezone Region/City`).
+- `editor`: vim; `zsh`: закреплённые Oh My Zsh/Powerlevel10k/plugins для пользователя и root.
+- `docker`: Docker CE из официального APT-репозитория и ограничение json-file logs.
 
-## Сборка
+**Выключены:** `sudo_nopasswd`, `docker_group`, `docker_move`, `firewall_off`.
 
-Нужен Go (версия из `go.mod`).
+`sudo_nopasswd` разрешает все root-команды без пароля. Группа `docker` также фактически предоставляет root-доступ. Их выключение **не отзывает ранее выданные права**. Без группы Docker используйте root или уже разрешённый sudo; скрипт не предоставляет sudo-доступ автоматически только ради Docker.
 
-```bash
-make test          # vet, unit tests
-make dist          # dist/provisioning-linux-{amd64,arm64} и SHA256SUMS
-make dist VERSION=0.1.0
-./dist/provisioning-linux-amd64 --version
+`firewall_off` — явный опциональный шаг, отключающий ufw/firewalld/nftables services. Это не отключение подсистем ядра и не гарантия отсутствия правил: скрипт не очищает iptables/nftables. Отключение сервисов может нарушить защиту и сеть. Публикация Docker-портов также требует самостоятельного аудита firewall.
+
+## Безопасность файлов и Zsh
+
+Файлы заменяются через уникальный временный файл в том же каталоге, после проверки candidate; старое содержимое сохраняется в уникальный `*.bak.*`. Совпадающее содержимое не мешает исправлению владельца и режима. Временные файлы очищаются при ошибках. `/etc/shells` и timezone также резервируются; существующий symlink `/etc/localtime` резервируется как ссылка, не перезаписывая zoneinfo.
+
+Symlink в изменяемых путях консервативно отклоняется (кроме специального случая `/etc/localtime`). Это не sandbox против пользователя, одновременно подменяющего каталоги: запускайте только на доверенном, не изменяемом параллельно хосте. Атомарная замена не равна полной устойчивости транзакции при выключении питания. Уникальный lock предотвращает параллельный запуск этого скрипта, но не других администраторских инструментов.
+
+Git origin не подменяется; dirty repository отклоняется, forced checkout не используется. Собственные вложенные plugin repositories исключаются из проверки untracked-файлов Oh My Zsh и проверяются отдельно. Закреплённые commits сохранены. `~/.p10k.zsh` не меняется, `~/.config/zsh/local.zsh` создаётся только при отсутствии. Ошибка Zsh smoke-test останавливает запуск с ненулевым статусом.
+
+## Установка Docker
+
+Конфликтующие distro packages (`docker.io`, docker-compose/buildx, podman-docker, containerd, runc) не удаляются без явного согласия:
+
+```sh
+python3 bootstrap.py --no-tui --replace-container-runtime alice
 ```
 
-## Релиз
+Это может затронуть Kubernetes и другие потребители containerd/runc. Сначала подготовьте резервную копию и окно обслуживания. До удаления проверяются доступность репозитория, подписанные APT indices, candidates и разрешимость совместной установки. APT-операции, обновление пакетов и их maintainer scripts **не откатываются**; новые версии могут автоматически перезапускать сервисы.
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
+GnuPG устанавливается независимо от `packages_extra`. Загруженный ключ проверяется по полному primary fingerprint:
+
+`9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88`
+
+Источник — подтверждение Docker maintainer в официальном репозитории документации: <https://github.com/docker/docs/issues/8891> (thaJeztah, 2019-10-31). При ротации ключа скрипт остановится; новый fingerprint нужно независимо проверить, а не автоматически принимать. Актуальная поддержка репозиториев: <https://docs.docker.com/engine/install/debian/> и <https://docs.docker.com/engine/install/ubuntu/>.
+
+`daemon.json` должен быть JSON object. Существующие настройки сохраняются; `max-size=10m`, `max-file=3` добавляются только для `json-file` и не заменяют заданные значения. Чужому log driver json-file options не добавляются. `dockerd --validate` проверяет candidate до применения. Проверяется готовность локального daemon через `docker info`, а не только наличие CLI. Используется локальный Unix socket, переменные Docker context/host не должны переключать проверку на удалённый сервер.
+
+## Перенос Docker data-root
+
+```sh
+python3 bootstrap.py --no-tui --enable docker_move --docker-root /opt/docker alice
 ```
 
-Workflow `Release` собирает бинарники и публикует релиз с файлами и `SHA256SUMS`.
-CI (`.github/workflows/ci.yml`) на каждом push и PR запускает тесты, сборку и прогон бинарника
-в контейнерах Debian 12, Ubuntu 24.04 и AlmaLinux 9, включая повторный запуск.
+Поддерживается консервативный случай: rootful classic `overlay2`/`vfs`, без swarm, live-restore, запущенных контейнеров и mountpoints внутри data-root. **Containerd image store / snapshotters, внешний containerd storage и сложные storage layouts не переносятся.** В частности, новая установка Docker с containerd image store может быть отклонена; не выключайте этот режим автоматически ради переноса. Bind mounts, внешние volumes и данные приложений за пределами data-root остаются на своих местах.
 
-## Закреплённые версии
+Требуются абсолютные пути без symlink и `..`; `/`, пересечение source/target и непустое назначение запрещены. Источник и свободное место проверяются до остановки. Оценка `du` плюс 10% — не гарантия достаточности места/inodes или совместимости файловой системы назначения; проверьте xattrs/ACL/hardlinks и требования Docker отдельно.
 
-Версии зафиксированы в `repos.go`. Чтобы обновить: поменяйте значение, посмотрите diff в upstream, соберите и выпустите новый тег.
+Порядок: сохранить конфигурацию (включая её отсутствие) и active/inactive states сервисов → остановить Docker/socket/containerd → `rsync -aHAX --numeric-ids` → записать валидированный config → восстановить активные сервисы → дождаться Docker → проверить фактический data-root. Источник **не переименовывается и не удаляется**. После успешной проверки старую копию удаляйте вручную, только когда проверили контейнеры, images и volumes.
+
+При ошибке или Ctrl-C скрипт пытается восстановить исходный config и состояния сервисов; при неудаче восстановления сообщает об этом отдельно. Данные назначения автоматически не удаляются, в том числе частичная копия. Повторный перенос в непустое назначение запрещён: сначала исследуйте данные вручную. Пакетные операции, выполненные до переноса, не входят в эту транзакцию.
+
+### Ручное восстановление
+
+После SIGKILL, перезагрузки, потери питания или ошибки rollback автоматическое восстановление не гарантируется:
+
+1. Не запускайте приложения и не удаляйте ни source, ни target. Зафиксируйте сообщения скрипта и сохраните обе копии.
+2. В окне обслуживания остановите `docker.service`, `docker.socket`, `containerd.service`.
+3. Проверьте `/etc/docker/daemon.json` и его `*.bak.*`. Восстановите исходный config (либо удалите новый, если файла до запуска не было); не выбирайте backup наугад.
+4. Убедитесь, что `data-root` соответствует нужной сохранённой копии. Проверьте config через `dockerd --validate --config-file /etc/docker/daemon.json`, если файл существует.
+5. Верните прежние состояния сервисов; проверьте `systemctl status docker` и `journalctl -u docker`, затем `docker --host unix:///var/run/docker.sock info` и данные приложений.
+6. После подтверждения работоспособности вручную решите, какую копию хранить. Не объединяйте две независимо использовавшиеся Docker data-root через rsync.
+
+## Dry-run и тесты
+
+Dry-run не создаёт lock, каталоги, backups или candidate-файлы, не устанавливает пакеты и не повышает права. Read-only команды и HTTPS-проверка доступности репозитория выполняются. Проверки, невозможные без будущей установки Docker/Zsh/rsync или root-доступа, отмечаются как непроверенные. Это план, **не успешное provisioning и не гарантия будущего результата**. Итог разделяет завершённые/запланированные, отключённые, незавершённые шаги и предупреждения.
+
+Host-safe unit tests (stdlib unittest/mock):
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 -m py_compile bootstrap.py tests/test_bootstrap.py
+zsh -n templates/zshrc
+zsh -n templates/provisioning-prompt.zsh
+zsh -n templates/local.zsh
+```
+
+Unit-тесты не запускают Linux provisioning, APT, sudo, systemctl или миграцию на машине разработчика. Реальные установки и восстановление нужно отдельно проверять в одноразовых Debian/Ubuntu VM с systemd и Docker; особенно отказ rsync, рестарта, заполнение диска, повторный запуск и различия storage drivers.
