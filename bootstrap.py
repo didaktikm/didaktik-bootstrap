@@ -899,6 +899,23 @@ class Option:
     hint: str
 
 
+PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]*\\Z")
+
+
+def normalize_packages(values: Sequence[str]) -> List[str]:
+    result: List[str] = []
+    for value in values:
+        for name in value.split(","):
+            name = name.strip()
+            if not name:
+                continue
+            if not PACKAGE_RE.fullmatch(name):
+                raise BootstrapError(f"недопустимое имя APT-пакета: {name}")
+            if name not in result:
+                result.append(name)
+    return result
+
+
 def build_options(username: str | Sequence[str], timezone: str, docker_root: str) -> List[Option]:
     if isinstance(username, str):
         usernames = [username] if username else []
@@ -910,8 +927,9 @@ def build_options(username: str | Sequence[str], timezone: str, docker_root: str
                "Debian: deb.debian.org; Ubuntu: archive.ubuntu.com. Сторонние и security-источники не меняются."),
         Option("upgrade", "Обновить систему (apt full-upgrade)", True,
                "Долгий шаг: обновляет все установленные пакеты."),
-        Option("packages_extra", "Дополнительные утилиты: " + " ".join(EXTRA_PACKAGES[:6]) + " ...",
-               True, "Полный список: " + " ".join(EXTRA_PACKAGES)),
+        Option("packages_extra", "Дополнительные утилиты (группа)", True,
+               "Пробел переключает группу; отдельные пакеты можно отметить ниже."),
+        *[Option("package_" + name, name, True, "Дополнительный пакет") for name in EXTRA_PACKAGES],
         Option("timezone", f"Часовой пояс {timezone} и NTP", True,
                "Другой пояс: флаг --timezone Region/City."),
         Option("sudo_nopasswd", f"sudo без пароля для {user_label}", False,
@@ -936,15 +954,23 @@ def run_text_menu(options: List[Option], state: Dict[str, bool], notice: str) ->
     while True:
         print("\nПервичная настройка сервера")
         print("Всегда ставятся: " + " ".join(BASE_PACKAGES))
+        print("Свои пакеты: " + ", ".join(state.get("custom_packages", [])))
         for i, opt in enumerate(options, 1):
             print(f" {i:2}. [{'x' if state[opt.key] else ' '}] {opt.title}")
         if notice:
             print(notice)
         try:
-            answer = input("Номера для переключения через пробел, Enter — запуск, q — отмена: ")
+            answer = input("Номера, c ПАКЕТЫ, Enter — запуск, q — отмена: ")
         except EOFError:
             return False
-        answer = answer.strip().lower()
+        answer = answer.strip()
+        if answer.lower().startswith("c "):
+            try:
+                state["custom_packages"] = normalize_packages([answer[2:]])
+            except BootstrapError as exc:
+                print(f"ОШИБКА: {exc}")
+            continue
+        answer = answer.lower()
         if not answer:
             return True
         if answer == "q":
@@ -976,6 +1002,7 @@ def run_menu(options: List[Option], state: Dict[str, bool], notice: str = "") ->
             put(0, "Первичная настройка сервера", curses.A_BOLD)
             put(1, "↑/↓ — выбор   пробел — отметить   Enter — запустить   q — отмена")
             put(2, "Всегда ставятся: " + " ".join(BASE_PACKAGES))
+            put(3, "Свои пакеты (c в текстовом меню): " + ", ".join(state.get("custom_packages", [])))
             for i, opt in enumerate(options):
                 mark = "[x]" if state[opt.key] else "[ ]"
                 put(4 + i, f" {mark} {opt.title}", curses.A_REVERSE if i == pos else 0)
@@ -1066,7 +1093,7 @@ def escalate(args: argparse.Namespace, state: Dict[str, bool], usernames: Sequen
 
 
 def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
-    keys = [o.key for o in build_options("", "", "")]
+    keys = [o.key for o in build_options("", "", "") if not o.key.startswith("package_")]
     p = argparse.ArgumentParser(
         description="Первичная настройка Debian/Ubuntu.",
         epilog="Ключи шагов: " + ", ".join(keys),
@@ -1076,6 +1103,10 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     p.add_argument("--timezone", default=DEFAULT_TIMEZONE, help=f"часовой пояс (по умолчанию: {DEFAULT_TIMEZONE})")
     p.add_argument("--docker-root", default=DEFAULT_DOCKER_ROOT, help=f"каталог данных Docker при переносе (по умолчанию: {DEFAULT_DOCKER_ROOT})")
     p.add_argument("--no-tui", action="store_true", help="без меню: применить значения по умолчанию и флаги")
+    p.add_argument("--packages", action="append", default=[], metavar="ПАКЕТЫ",
+                   help="добавить APT-пакеты (через запятую; имена [a-z0-9][a-z0-9+.-]*)")
+    p.add_argument("--package", action="append", dest="packages", metavar="ПАКЕТ",
+                   help="добавить один APT-пакет (можно повторять)")
     p.add_argument("--enable", action="append", default=[], choices=keys, metavar="ШАГ", help="включить шаг (можно несколько раз)")
     p.add_argument("--disable", action="append", default=[], choices=keys, metavar="ШАГ", help="выключить шаг (можно несколько раз)")
     p.add_argument("--dry-run", action="store_true", help="показать команды, ничего не меняя")
@@ -1110,6 +1141,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     root = Account.lookup("root")
     options = build_options([account.name for account in users], args.timezone, args.docker_root)
     state = {o.key: o.default for o in options}
+    state["custom_packages"] = normalize_packages(args.packages)
     for key in args.enable:
         state[key] = True
     for key in args.disable:
@@ -1156,7 +1188,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         step("Пакеты")
         packages = list(BASE_PACKAGES)
         if state["packages_extra"]:
-            packages += EXTRA_PACKAGES
+            packages += [name for name in EXTRA_PACKAGES if state.get("package_" + name, False)]
+        packages += state.get("custom_packages", [])
+        packages = normalize_packages(packages)
         if state["docker_move"] and "rsync" not in packages:
             packages.append("rsync")
         if state["official_mirror"]:
