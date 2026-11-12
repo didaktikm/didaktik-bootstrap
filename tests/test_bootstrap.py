@@ -44,6 +44,15 @@ class CliTests(Base):
         self.assertIn("git", b.BASE_PACKAGES)
         self.assertIn("gh", b.BASE_PACKAGES)
 
+    def test_normalize_packages_accepts_valid_names_and_rejects_invalid(self):
+        self.assertEqual(
+            b.normalize_packages(["sudo, gh", "ca-certificates"]),
+            ["sudo", "gh", "ca-certificates"],
+        )
+        for invalid in ("Sudo", "bad_name", "bad\\\\name", "-bad"):
+            with self.subTest(invalid=invalid), self.assertRaises(b.BootstrapError):
+                b.normalize_packages([invalid])
+
     def test_defaults_and_dependencies(self):
         state = {o.key: o.default for o in b.build_options("alice", "UTC", "/opt/docker")}
         for key in ("sudo_nopasswd", "docker_group", "docker_move", "firewall_off"):

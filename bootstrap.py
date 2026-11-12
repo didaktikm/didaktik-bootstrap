@@ -899,7 +899,7 @@ class Option:
     hint: str
 
 
-PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]*\\Z")
+PACKAGE_RE = re.compile(r"[a-z0-9][a-z0-9+.-]*\Z")
 
 
 def normalize_packages(values: Sequence[str]) -> List[str]:
