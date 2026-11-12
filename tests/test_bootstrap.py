@@ -156,6 +156,22 @@ class FileTests(Base):
 
 
 class DockerTests(Base):
+    def test_root_is_not_added_to_docker_group(self):
+        with patch.object(b, "run") as run, patch.object(b, "user_groups", side_effect=AssertionError("must not inspect root groups")):
+            b.add_docker_group("root")
+        run.assert_not_called()
+
+    def test_non_root_requires_docker_group(self):
+        with patch.object(b.grp, "getgrnam", side_effect=KeyError), self.assertRaisesRegex(b.BootstrapError, "группа docker отсутствует"):
+            b.add_docker_group("alice")
+
+    def test_mixed_users_adds_only_non_root(self):
+        with patch.object(b.grp, "getgrnam"), patch.object(b, "user_groups", return_value=[]), patch.object(b, "run") as run:
+            b.add_docker_group("root")
+            b.add_docker_group("alice")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["usermod", "-aG", "docker", "alice"])
+
     def test_json_object_required(self):
         for content in ("[]", "null", "42", "", '{"log-opts":[]}'):
             with self.subTest(content=content):

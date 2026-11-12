@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import grp
 import json
 import locale
 import os
@@ -630,6 +631,13 @@ def install_docker(system: SystemInfo, replace_runtime: bool = False) -> None:
 
 
 def add_docker_group(username: str) -> None:
+    if username == "root":
+        log("  root уже имеет права Docker; добавление в группу не требуется")
+        return
+    try:
+        grp.getgrnam("docker")
+    except KeyError as exc:
+        raise BootstrapError("группа docker отсутствует: установка Docker не завершилась успешно") from exc
     if "docker" in user_groups(username):
         log(f"  {username} уже в группе docker")
         return
@@ -1185,10 +1193,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             completed.append("zsh")
         if state["docker"]:
             step("Docker")
-            for user in users:
-                if state["docker_group"]:
-                    add_docker_group(user.name)
             setup_docker({**state, "docker_group": False}, users[0].name, system, args.docker_root, args.replace_container_runtime)
+            if state["docker_group"]:
+                for user in users:
+                    add_docker_group(user.name)
             completed.append("docker")
         if state["firewall_off"]:
             step("Фаервол")
