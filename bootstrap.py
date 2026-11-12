@@ -1006,8 +1006,8 @@ def build_options(username: str | Sequence[str], timezone: str, docker_root: str
         Option("timezone", f"Часовой пояс {timezone} и NTP", True,
                "Другой пояс: флаг --timezone Region/City."),
         *([] if usernames and all(name == "root" for name in usernames) else [
-            Option("sudo_nopasswd", f"sudo без пароля для {user_label}", False,
-                   "Файл /etc/sudoers.d/<user>; старый сохраняется в .bak, проверяется visudo.")]),
+            Option("sudo_nopasswd", f"sudo без пароля для {user_label or 'выбранных пользователей'}", True,
+                   "Применяется к выбранным и созданным пользователям; файл /etc/sudoers.d/<user>, проверяется visudo.")]),
         Option("editor", "vim — редактор по умолчанию", True, "update-alternatives --set editor"),
         Option("zsh", "zsh + Oh My Zsh + Powerlevel10k (пользователь и root)", True,
                "Ваши шаблоны из templates/. ~/.p10k.zsh не трогается."),
@@ -1163,8 +1163,9 @@ def default_user() -> str:
     raise BootstrapError("при прямом запуске root укажите пользователя явно")
 
 
-def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> None:
-    """Ensure selected accounts exist; new accounts have locked passwords."""
+def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> List[str]:
+    """Ensure selected accounts exist; return the accounts that remain selected."""
+    selected = list(names)
     missing = []
     for name in names:
         if name == "root":
@@ -1176,7 +1177,7 @@ def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> No
         except KeyError:
             missing.append(name)
     if not missing:
-        return
+        return selected
     if not create:
         if not interactive:
             raise BootstrapError("нет пользователей: " + ", ".join(missing) + "; повторите с --create-users")
@@ -1191,11 +1192,13 @@ def ensure_users(names: Sequence[str], *, create: bool, interactive: bool) -> No
             raise BootstrapError("имя пользователя небезопасно: " + ", ".join(invalid))
         if unknown:
             raise BootstrapError("нельзя создать непредложенных пользователей: " + ", ".join(unknown))
+        selected = [name for name in selected if name not in (set(missing) - set(requested))]
         missing = [name for name in missing if name in requested]
     for name in missing:
         run(["useradd", "--create-home", "--shell", "/bin/bash", name])
         run(["passwd", "--lock", name])
         log(f"  создан пользователь {name} (пароль заблокирован)")
+    return selected
 
 
 def escalate(args: argparse.Namespace, state: Dict[str, bool], usernames: Sequence[str]) -> None:
@@ -1269,7 +1272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     selected_names = list(dict.fromkeys(selected_names))
     interactive = not args.no_tui and sys.stdin.isatty() and sys.stdout.isatty()
     if os.geteuid() == 0 and not DRY_RUN:
-        ensure_users(selected_names, create=args.create_users, interactive=interactive)
+        selected_names = ensure_users(selected_names, create=args.create_users, interactive=interactive)
     users = [Account.lookup(name) for name in selected_names]
     root = Account.lookup("root")
     options = build_options([account.name for account in users], args.timezone, args.docker_root)

@@ -104,8 +104,16 @@ class CliTests(Base):
 
     def test_defaults_and_dependencies(self):
         state = {o.key: o.default for o in b.build_options("alice", "UTC", "/opt/docker")}
-        for key in ("sudo_nopasswd", "docker_group", "docker_move", "firewall_off"):
+        self.assertTrue(state["sudo_nopasswd"])
+        for key in ("docker_group", "docker_move", "firewall_off"):
             self.assertFalse(state[key])
+        root_options = b.build_options(["root"], "UTC", "/opt/docker")
+        self.assertNotIn("sudo_nopasswd", [o.key for o in root_options])
+        multiple = b.build_options(["Rut", "Didactic"], "UTC", "/opt/docker")
+        sudo = next(o for o in multiple if o.key == "sudo_nopasswd")
+        self.assertTrue(sudo.default)
+        self.assertIn("Rut, Didactic", sudo.title)
+        self.assertIn("выбранным и созданным", sudo.hint)
         state.update(docker=False, docker_move=True)
         with self.assertRaises(b.BootstrapError):
             b.resolve_dependencies(state)
